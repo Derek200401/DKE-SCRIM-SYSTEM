@@ -163,20 +163,26 @@ const PROMPT = `Analyze this Mobile Legends end-game scoreboard carefully.
    - The exact rating: the decimal number printed at the bottom of the medal / MVP icon near the centre divider. Do NOT confuse it with kills/deaths/assists, gold or level numbers.
    - The medal icon beside the rating. Rules: Winning team: Victory MVP = highest score of the winning team; Supreme Gold 10.1-15.0; Gold 7.1-10.0; Silver 4.1-7.0; Bronze 3.0-4.0. Losing team: Defeat MVP (MVP Loss) = highest score of the losing team (minimum 6.6, sometimes none); Gold 7.1 and up; Silver 4.1-7.0; Bronze 3.0-4.0.`;
 
-// Tries the model from GEMINI_MODEL first, then newer fallbacks if Google retires a model.
-const MODELS = [process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-flash-latest'].filter(Boolean);
+// Tries GEMINI_MODEL first, then fallbacks. Retries on temporary overload (503) before switching model.
+const MODELS = [process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-flash-lite-latest'].filter((x, i, a) => x && a.indexOf(x) === i);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function generate(ai, m) {
   let last;
   for (const model of MODELS) {
-    try {
-      return await ai.models.generateContent({
-        model,
-        contents: [{ inlineData: { data: m[2], mimeType: m[1] } }, PROMPT],
-        config: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0 }
-      });
-    } catch (e) {
-      last = e;
-      if (!/404|NOT_FOUND|no longer available|not found/i.test(String(e.message || e))) throw e;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await ai.models.generateContent({
+          model,
+          contents: [{ inlineData: { data: m[2], mimeType: m[1] } }, PROMPT],
+          config: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0 }
+        });
+      } catch (e) {
+        last = e;
+        const msg = String(e.message || e);
+        if (/503|UNAVAILABLE|high demand|overloaded/i.test(msg)) { await sleep(1500 * (attempt + 1)); continue; } // retry same model
+        if (/404|NOT_FOUND|no longer available|not found/i.test(msg)) break; // try next model
+        throw e;
+      }
     }
   }
   throw last;
@@ -201,7 +207,8 @@ app.post('/api/scan', auth, wrap(async (req, res) => {
   } catch (e) {
     const msg = String(e.message || e);
     const busy = /429|quota|RESOURCE_EXHAUSTED/i.test(msg);
-    res.status(502).json({ error: busy ? 'Naubos muna ang free limit ng Gemini. Maghintay ng ilang minuto at subukan ulit.' : 'Hindi na-scan: ' + msg.slice(0, 200) });
+    const down = /503|UNAVAILABLE|high demand|overloaded/i.test(msg);
+    res.status(502).json({ error: down ? 'Busy ang Gemini ngayon (pansamantala lang). Subukan ulit sa loob ng ilang segundo.' : busy ? 'Naubos muna ang free limit ng Gemini. Maghintay ng ilang minuto at subukan ulit.' : 'Hindi na-scan: ' + msg.slice(0, 200) });
   }
 }));
 
