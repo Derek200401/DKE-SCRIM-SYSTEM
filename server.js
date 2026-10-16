@@ -163,6 +163,25 @@ const PROMPT = `Analyze this Mobile Legends end-game scoreboard carefully.
    - The exact rating: the decimal number printed at the bottom of the medal / MVP icon near the centre divider. Do NOT confuse it with kills/deaths/assists, gold or level numbers.
    - The medal icon beside the rating. Rules: Winning team: Victory MVP = highest score of the winning team; Supreme Gold 10.1-15.0; Gold 7.1-10.0; Silver 4.1-7.0; Bronze 3.0-4.0. Losing team: Defeat MVP (MVP Loss) = highest score of the losing team (minimum 6.6, sometimes none); Gold 7.1 and up; Silver 4.1-7.0; Bronze 3.0-4.0.`;
 
+// Tries the model from GEMINI_MODEL first, then newer fallbacks if Google retires a model.
+const MODELS = [process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-flash-latest'].filter(Boolean);
+async function generate(ai, m) {
+  let last;
+  for (const model of MODELS) {
+    try {
+      return await ai.models.generateContent({
+        model,
+        contents: [{ inlineData: { data: m[2], mimeType: m[1] } }, PROMPT],
+        config: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0 }
+      });
+    } catch (e) {
+      last = e;
+      if (!/404|NOT_FOUND|no longer available|not found/i.test(String(e.message || e))) throw e;
+    }
+  }
+  throw last;
+}
+
 app.post('/api/scan', auth, wrap(async (req, res) => {
   if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'Wala pang GEMINI_API_KEY sa Railway Variables.' });
   const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(req.body.image || '');
@@ -171,11 +190,7 @@ app.post('/api/scan', auth, wrap(async (req, res) => {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     let d;
     for (let i = 0; i < 2; i++) { // retry once if it did not return all 10 players
-      const response = await ai.models.generateContent({
-        model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-        contents: [{ inlineData: { data: m[2], mimeType: m[1] } }, PROMPT],
-        config: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0 }
-      });
+      const response = await generate(ai, m);
       d = JSON.parse(response.text);
       if ((d.players || []).length === 10) break;
     }
