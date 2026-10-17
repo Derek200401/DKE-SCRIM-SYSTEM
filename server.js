@@ -64,6 +64,38 @@ const normalizeIgn = v => {
 const clean = v => normalizeIgn(v);
 const num = v => (Number.isFinite(+v) ? Math.round(+v) : null);
 const find = ign => players.find(p => p.ign.toLowerCase() === ign.toLowerCase());
+const canonicalIgn = ign => clean(ign).normalize('NFKD')
+  .replace(/\p{M}/gu, '')
+  .replace(/[\u200B-\u200D\uFEFF]/g, '')
+  .toLowerCase()
+  .replace(/[^\p{L}\p{N}]/gu, '');
+function similarity(a, b) {
+  if (!a || !b) return 0;
+  const left = Array.from(a), right = Array.from(b);
+  let previous = Array.from({ length: right.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= left.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= right.length; j++) {
+      current[j] = Math.min(
+        current[j - 1] + 1,
+        previous[j] + 1,
+        previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1)
+      );
+    }
+    previous = current;
+  }
+  return 1 - previous[right.length] / Math.max(left.length, right.length);
+}
+function matchIgn(ign, records, excludeId = null) {
+  const target = canonicalIgn(ign);
+  if (!target) return [];
+  const matches = records
+    .filter(p => p.id !== excludeId)
+    .map(player => ({ player, score: similarity(target, canonicalIgn(player.ign)) }))
+    .filter(x => x.score >= 0.8)
+    .sort((a, b) => b.score - a.score);
+  return matches.map(x => x.player);
+}
 const wrap = fn => (req, res) => fn(req, res).catch(e => res.status(500).json({ error: 'Server error: ' + e.message }));
 
 const app = express();
@@ -118,24 +150,37 @@ app.delete('/api/players/:id', auth, wrap(async (req, res) => {
 // Add points to many players at once (from the scan confirmation)
 app.post('/api/players/bulk', auth, wrap(async (req, res) => {
   const rows = Array.isArray(req.body.rows) ? req.body.rows.slice(0, 20) : [];
-  const seen = new Map(), upd = {};
-  for (const r of rows) {
-    const ign = clean(r.ign), pts = num(r.points);
-    if (!ign || pts === null) continue;
-    const k = ign.toLowerCase();
-    let q = seen.get(k);
-    if (!q) {
-      const e = find(ign);
-      q = e ? { ...e, isNew: false } : { id: ref.push().key, ign, points: 0, isNew: true };
-      seen.set(k, q);
+  if (rows.some(r => !r || !clean(r.ign) || num(r.points) === null)) {
+    return res.status(400).json({ error: 'May IGN o points na kulang o invalid sa scanned result.' });
+  }
+  const prepared = rows.map(r => ({ ign: clean(r.ign), points: num(r.points), id: ref.push().key }));
+  const result = await ref.transaction(current => {
+    const data = current && typeof current === 'object' ? { ...current } : {};
+    const records = Object.entries(data).map(([id, p]) => ({
+      id,
+      ign: String(p?.ign || '')
+    }));
+    for (const row of prepared) {
+      const matches = matchIgn(row.ign, records);
+      if (matches.length) {
+        const keeper = matches[0];
+        const mergedPoints = matches.reduce((total, player) => total + (Number(data[player.id]?.points) || 0), row.points);
+        const matchedIds = new Set(matches.map(player => player.id));
+        for (const player of matches.slice(1)) delete data[player.id];
+        data[keeper.id] = { ...data[keeper.id], points: mergedPoints };
+        for (let i = records.length - 1; i >= 0; i--) {
+          if (matchedIds.has(records[i].id) && records[i].id !== keeper.id) records.splice(i, 1);
+        }
+      } else {
+        data[row.id] = { ign: row.ign, points: row.points };
+        records.push({ id: row.id, ign: row.ign });
+      }
     }
-    q.points += pts;
+    return data;
+  });
+  if (!result.committed) {
+    return res.status(500).json({ error: 'Hindi na-save ang points sa database. Subukan ulit.' });
   }
-  for (const q of seen.values()) {
-    if (q.isNew) upd[q.id] = { ign: q.ign, points: q.points };
-    else upd[q.id + '/points'] = q.points;
-  }
-  if (Object.keys(upd).length) await ref.update(upd);
   res.json({ ok: true });
 }));
 
