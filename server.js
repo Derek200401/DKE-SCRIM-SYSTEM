@@ -28,7 +28,6 @@ let players = [];
 const clients = new Set();
 const toList = v => Object.entries(v || {}).map(([id, p]) => ({ id, ign: String(p.ign || ''), points: Number(p.points) || 0 }));
 
-// Keeps a live copy of the database and pushes every change to all open websites.
 await new Promise(ok => {
   ref.on('value', snap => {
     players = toList(snap.val());
@@ -38,7 +37,6 @@ await new Promise(ok => {
   }, err => { console.error('Firebase error:', err.message); process.exit(1); });
 });
 
-/* ---------- helpers ---------- */
 const sign = s => crypto.createHmac('sha256', SECRET).update(s).digest('hex');
 const safe = (a, b) => {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
@@ -49,12 +47,25 @@ function auth(req, res, next) {
   if (exp && sig && Date.now() < +exp && safe(sig, sign(exp))) return next();
   res.status(401).json({ error: 'Session expired. Mag-login ulit.' });
 }
-const clean = v => String(v || '').trim().slice(0, 40);
+const normalizeIgn = v => {
+  let s = String(v || '').trim().replace(/\u00A0/g, ' ').replace(/\s+/g, ' ');
+  const match = s.match(/^([A-Z0-9][A-Z0-9._-]{0,7})\s+(.+)$/);
+  if (match) {
+    const tag = match[1];
+    const name = match[2].trim();
+    if (name.length >= 2 && /^[A-Z0-9._-]{2,8}$/i.test(tag) && !/^\d+$/.test(tag)) {
+      const upperTag = tag.toUpperCase();
+      const ignored = ['BP', 'IS', 'TDB', 'TB', 'TEAM', 'CLAN'];
+      if (ignored.includes(upperTag) || /^[A-Z0-9]{2,5}$/.test(tag)) return name;
+    }
+  }
+  return s.slice(0, 40);
+};
+const clean = v => normalizeIgn(v);
 const num = v => (Number.isFinite(+v) ? Math.round(+v) : null);
 const find = ign => players.find(p => p.ign.toLowerCase() === ign.toLowerCase());
 const wrap = fn => (req, res) => fn(req, res).catch(e => res.status(500).json({ error: 'Server error: ' + e.message }));
 
-/* ---------- app ---------- */
 const app = express();
 app.use('/api/scan', express.json({ limit: '10mb' }));
 app.use(express.json({ limit: '100kb' }));
@@ -160,10 +171,11 @@ const PROMPT = `Analyze this Mobile Legends end-game scoreboard carefully.
 2. Extract all 10 players row by row: 5 on the Left side (names on the left) and 5 on the Right side (names on the right), top to bottom.
 3. For each player capture:
    - The exact IGN with every letter, digit, symbol and special character (for example ø ë Ω π . ~ " ²) and spacing. Exclude the gender icon, country flag, level number and any small icon beside the name.
+   - IMPORTANT: Ignore any squad/clan tag prefix attached to the IGN. A tag such as BP, TDB, IS, or any short uppercase label before the actual name is NOT part of the IGN. Output only the real IGN.
+   - Examples of tag stripping: 'BP RAVEN' -> 'RAVEN'; 'TDB bℓευ' -> 'bℓευ'; 'IS CARL' -> 'CARL'; 'IS R.Shen²' -> 'R.Shen²'.
    - The exact rating: the decimal number printed at the bottom of the medal / MVP icon near the centre divider. Do NOT confuse it with kills/deaths/assists, gold or level numbers.
    - The medal icon beside the rating. Rules: Winning team: Victory MVP = highest score of the winning team; Supreme Gold 10.1-15.0; Gold 7.1-10.0; Silver 4.1-7.0; Bronze 3.0-4.0. Losing team: Defeat MVP (MVP Loss) = highest score of the losing team (minimum 6.6, sometimes none); Gold 7.1 and up; Silver 4.1-7.0; Bronze 3.0-4.0.`;
 
-// Tries GEMINI_MODEL first, then fallbacks. Retries on temporary overload (503) before switching model.
 const MODELS = [process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-flash-lite-latest'].filter((x, i, a) => x && a.indexOf(x) === i);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function generate(ai, m) {
