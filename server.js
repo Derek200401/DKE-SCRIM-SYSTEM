@@ -62,9 +62,13 @@ const normalizeIgn = v => {
   return s.slice(0, 40);
 };
 const clean = v => normalizeIgn(v);
-const num = v => (Number.isFinite(+v) ? Math.round(+v) : null);
+const num = v => {
+  if (v === null || v === undefined || String(v).trim() === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n) : null;
+};
 const find = ign => players.find(p => p.ign.toLowerCase() === ign.toLowerCase());
-const canonicalIgn = ign => clean(ign).normalize('NFKD')
+const canonicalIgn = ign => clean(ign).replace(/[\u02B0-\u02FF]/g, '').normalize('NFKD')
   .replace(/\p{M}/gu, '')
   .replace(/[\u200B-\u200D\uFEFF]/g, '')
   .toLowerCase()
@@ -89,12 +93,16 @@ function similarity(a, b) {
 function matchIgn(ign, records, excludeId = null) {
   const target = canonicalIgn(ign);
   if (!target) return [];
-  const matches = records
-    .filter(p => p.id !== excludeId)
+  const available = records.filter(p => p.id !== excludeId);
+  const exactMatches = available.filter(p => canonicalIgn(p.ign) === target);
+  if (exactMatches.length) return exactMatches;
+  const matches = available
     .map(player => ({ player, score: similarity(target, canonicalIgn(player.ign)) }))
     .filter(x => x.score >= 0.8)
     .sort((a, b) => b.score - a.score);
-  return matches.map(x => x.player);
+  if (!matches.length) return [];
+  if (matches.length > 1 && matches[0].score === matches[1].score) return null;
+  return [matches[0].player];
 }
 const wrap = fn => (req, res) => fn(req, res).catch(e => res.status(500).json({ error: 'Server error: ' + e.message }));
 
@@ -149,12 +157,17 @@ app.delete('/api/players/:id', auth, wrap(async (req, res) => {
 
 // Add points to many players at once (from the scan confirmation)
 app.post('/api/players/bulk', auth, wrap(async (req, res) => {
-  const rows = Array.isArray(req.body.rows) ? req.body.rows.slice(0, 20) : [];
+  const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
+  if (!rows.length || rows.length > 20) {
+    return res.status(400).json({ error: 'Walang rows o sobra sa 20 players ang scanned result.' });
+  }
   if (rows.some(r => !r || !clean(r.ign) || num(r.points) === null)) {
     return res.status(400).json({ error: 'May IGN o points na kulang o invalid sa scanned result.' });
   }
   const prepared = rows.map(r => ({ ign: clean(r.ign), points: num(r.points), id: ref.push().key }));
+  let ambiguousIgn = '';
   const result = await ref.transaction(current => {
+    ambiguousIgn = '';
     const data = current && typeof current === 'object' ? { ...current } : {};
     const records = Object.entries(data).map(([id, p]) => ({
       id,
@@ -162,6 +175,10 @@ app.post('/api/players/bulk', auth, wrap(async (req, res) => {
     }));
     for (const row of prepared) {
       const matches = matchIgn(row.ign, records);
+      if (matches === null) {
+        ambiguousIgn = row.ign;
+        return;
+      }
       if (matches.length) {
         const keeper = matches[0];
         const mergedPoints = matches.reduce((total, player) => total + (Number(data[player.id]?.points) || 0), row.points);
@@ -179,6 +196,9 @@ app.post('/api/players/bulk', auth, wrap(async (req, res) => {
     return data;
   });
   if (!result.committed) {
+    if (ambiguousIgn) {
+      return res.status(409).json({ error: `Hindi naidagdag ang points: may dalawang magkapantay na posibleng IGN para sa "${ambiguousIgn}". I-check ang leaderboard at itama muna ang IGN.` });
+    }
     return res.status(500).json({ error: 'Hindi na-save ang points sa database. Subukan ulit.' });
   }
   res.json({ ok: true });
@@ -222,27 +242,35 @@ const PROMPT = `Analyze this Mobile Legends end-game scoreboard carefully.
    - The medal icon beside the rating. Rules: Winning team: Victory MVP = highest score of the winning team; Supreme Gold 10.1-15.0; Gold 7.1-10.0; Silver 4.1-7.0; Bronze 3.0-4.0. Losing team: Defeat MVP (MVP Loss) = highest score of the losing team (minimum 6.6, sometimes none); Gold 7.1 and up; Silver 4.1-7.0; Bronze 3.0-4.0.`;
 
 const MODELS = [process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-flash-lite-latest'].filter((x, i, a) => x && a.indexOf(x) === i);
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function generate(ai, m) {
   let last;
   for (const model of MODELS) {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        return await ai.models.generateContent({
-          model,
-          contents: [{ inlineData: { data: m[2], mimeType: m[1] } }, PROMPT],
-          config: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0 }
-        });
-      } catch (e) {
-        last = e;
-        const msg = String(e.message || e);
-        if (/503|UNAVAILABLE|high demand|overloaded/i.test(msg)) { await sleep(1500 * (attempt + 1)); continue; } // retry same model
-        if (/404|NOT_FOUND|no longer available|not found/i.test(msg)) break; // try next model
-        throw e;
-      }
+    try {
+      return await ai.models.generateContent({
+        model,
+        contents: [{ inlineData: { data: m[2], mimeType: m[1] } }, PROMPT],
+        config: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0 }
+      });
+    } catch (e) {
+      last = e;
+      const msg = String(e.message || e);
+      if (/503|UNAVAILABLE|high demand|overloaded|404|NOT_FOUND|no longer available|not found/i.test(msg)) continue;
+      throw e;
     }
   }
   throw last;
+}
+
+function validateScan(d) {
+  if (!d || !['VICTORY', 'DEFEAT'].includes(String(d.matchResult || '').trim().toUpperCase()) || !Array.isArray(d.players)) return false;
+  const left = d.players.filter(p => p && String(p.side || '').toLowerCase() === 'left');
+  const right = d.players.filter(p => p && String(p.side || '').toLowerCase() === 'right');
+  if (left.length !== 5 || right.length !== 5 || d.players.length !== 10) return false;
+  return d.players.every(p => {
+    if (!p || typeof p.ign !== 'string' || p.rating === null || p.rating === undefined || String(p.rating).trim() === '') return false;
+    const rating = Number(p.rating);
+    return Boolean(clean(p.ign)) && Number.isFinite(rating) && rating >= 0 && rating <= 15;
+  });
 }
 
 app.post('/api/scan', auth, wrap(async (req, res) => {
@@ -252,10 +280,14 @@ app.post('/api/scan', auth, wrap(async (req, res) => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     let d;
-    for (let i = 0; i < 2; i++) { // retry once if it did not return all 10 players
+    for (let i = 0; i < 2; i++) {
       const response = await generate(ai, m);
-      d = JSON.parse(response.text);
-      if ((d.players || []).length === 10) break;
+      try { d = JSON.parse(response.text); }
+      catch { d = null; }
+      if (validateScan(d)) break;
+    }
+    if (!validateScan(d)) {
+      return res.status(502).json({ error: 'Hindi kumpleto o hindi malinaw ang scan (kailangan 5 players bawat team). Subukan ulit gamit ang malinaw at buong scoreboard image.' });
     }
     const medal = x => { const t = String(x || '').toLowerCase(); return t.includes('mvp') ? 'MVP' : t.includes('supreme') ? 'Supreme Gold' : t.includes('gold') ? 'Gold' : t.includes('silver') ? 'Silver' : t.includes('bronze') ? 'Bronze' : ''; };
     const fix = side => (d.players || []).filter(p => String(p.side).toLowerCase() === side).slice(0, 5)
