@@ -71,11 +71,18 @@ input[type=file]::file-selector-button{background:var(--card);color:var(--tx);bo
 .history-team h3{font-size:13px;color:var(--mut);margin-bottom:8px}
 .history-player{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid var(--line)}
 .history-player:first-of-type{border-top:0}
+.history-points{display:grid;gap:8px;margin-top:12px}
+.history-points h3{font-size:13px;color:var(--mut)}
+.history-points-list{display:grid;gap:7px}
+.history-points-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--in)}
+.history-points-row strong{min-width:0;overflow-wrap:anywhere}
+.history-points-total{white-space:nowrap;color:var(--mut)}
+.history-points-added{white-space:nowrap;color:var(--grn);font-weight:700}
 dialog{background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:16px;padding:20px;width:min(380px,92vw);margin:auto}
 dialog::backdrop{background:rgba(0,0,0,.7)}
 dialog form{display:grid;gap:10px}
 .err{color:var(--red);font-size:13px;min-height:18px}
-@media(max-width:560px){.frm{grid-template-columns:1fr}.tn{font-size:24px}.history-item{grid-template-columns:76px 1fr auto}.history-thumb{width:76px;height:56px}.history-detail-teams{grid-template-columns:1fr}.brand{font-size:13px}.bar-actions{gap:5px}.bar{padding:10px}}
+@media(max-width:560px){.frm{grid-template-columns:1fr}.tn{font-size:24px}.history-item{grid-template-columns:76px 1fr auto}.history-thumb{width:76px;height:56px}.history-detail-teams{grid-template-columns:1fr}.history-points-row{grid-template-columns:minmax(0,1fr) auto;gap:5px 10px}.history-points-added{grid-column:2}.brand{font-size:13px}.bar-actions{gap:5px}.bar{padding:10px}}
 </style>
 </head>
 <body>
@@ -231,10 +238,26 @@ async function openHistoryDetails(id) {
       { name: 'Left team', players: Array.isArray(entry.left) ? entry.left : [] },
       { name: 'Right team', players: Array.isArray(entry.right) ? entry.right : [] }
     ];
+    const pointChanges = Array.isArray(entry.players) ? entry.players : [];
     const image = typeof entry.image === 'string' && /^data:image\/(?:jpeg|png|webp);base64,/i.test(entry.image)
       ? `<img class="history-detail-image" src="${esc(entry.image)}" alt="Scanned game scoreboard">`
       : '<div class="mut">No scoreboard image saved.</div>';
     $('#historyDetailTitle').textContent = `${entry.banner || 'Game result'} · ${fmtDate(entry.createdAt)}`;
+    const pointsHtml = pointChanges.length
+      ? `<section class="history-points">
+          <h3>Points added</h3>
+          <div class="history-points-list">${pointChanges.map(player => {
+            const before = Number(player.before) || 0;
+            const after = Number(player.after) || 0;
+            const added = Number(player.added) || 0;
+            return `<div class="history-points-row">
+              <strong>${esc(player.ign || 'Unknown player')}</strong>
+              <span class="history-points-total">${before} → ${after}</span>
+              <span class="history-points-added">${added >= 0 ? '+' : ''}${added}</span>
+            </div>`;
+          }).join('')}</div>
+        </section>`
+      : '<section class="history-points"><h3>Points added</h3><div class="mut">No point changes recorded.</div></section>';
     $('#historyDetailBody').innerHTML = image + `<div class="history-detail-teams">${teams.map(team => `
       <section class="history-team">
         <h3>${team.name}</h3>
@@ -242,7 +265,7 @@ async function openHistoryDetails(id) {
           <span>${esc(player.ign || 'Unknown player')}</span>
           <span>${Number(player.rating || 0)}${player.medal ? ` · ${esc(player.medal)}` : ''}</span>
         </div>`).join('') || '<div class="mut">No player details.</div>'}
-      </section>`).join('')}</div>`;
+      </section>`).join('')}</div>` + pointsHtml;
   } catch (error) {
     $('#historyDetailBody').innerHTML = `<div class="mut">${esc(error.message || 'Could not load game details.')}</div>`;
   }
