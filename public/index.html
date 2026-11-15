@@ -390,7 +390,7 @@ $('#cfb').onchange = e => {
   const r = sc.t[d.s][d.i];
   if (d.k === 'ign') r.ign = e.target.value;
   if (d.k === 'rating') r.rating = parseFloat(e.target.value) || 0;
-  if (d.k === 'pts') { r.pts = parseInt(e.target.value) || 0; r.pm = true; }
+  if (d.k === 'pts') { r.pts = Number(e.target.value) || 0; r.pm = true; }
   showConfirm();
 };
 $('#cfb').onclick = e => {
@@ -402,6 +402,16 @@ $('#cfNo').onclick = () => { $('#cf').hidden = true; sc = null; };
 $('#cfOk').onclick = async () => {
   if (savingPoints) return;
   $('#cfErr').textContent = '';
+  $('#cfb').querySelectorAll('[data-k]').forEach(input => {
+    const data = input.dataset;
+    const row = sc.t[data.s][data.i];
+    if (data.k === 'ign') row.ign = input.value;
+    if (data.k === 'rating') row.rating = Number(input.value) || 0;
+    if (data.k === 'pts') {
+      row.pts = Number(input.value) || 0;
+      row.pm = true;
+    }
+  });
   const rows = sc.t.flat().filter(r => r.ign.trim()).map(r => ({ ign: r.ign.trim(), points: r.pts }));
   if (!rows.length) { $('#cfErr').textContent = 'There are no player names to add.'; return; }
   savingPoints = true;
