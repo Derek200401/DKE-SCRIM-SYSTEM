@@ -23,6 +23,7 @@ admin.initializeApp({
   databaseURL: process.env.FIREBASE_DATABASE_URL || 'https://dke-points-default-rtdb.asia-southeast1.firebasedatabase.app'
 });
 const ref = admin.database().ref('players');
+const historyRef = admin.database().ref('history');
 
 let players = [];
 const clients = new Set();
@@ -108,10 +109,23 @@ const wrap = fn => (req, res) => fn(req, res).catch(e => res.status(500).json({ 
 
 const app = express();
 app.use('/api/scan', express.json({ limit: '10mb' }));
-app.use(express.json({ limit: '100kb' }));
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/players', (req, res) => res.json(players));
+app.get('/api/history', wrap(async (req, res) => {
+  const snap = await historyRef.orderByChild('createdAt').once('value');
+  const items = Object.entries(snap.val() || {}).map(([id, entry]) => ({
+    id,
+    createdAt: entry?.createdAt || new Date().toISOString(),
+    ...entry,
+    players: Array.isArray(entry?.players) ? entry.players : [],
+    left: Array.isArray(entry?.left) ? entry.left : [],
+    right: Array.isArray(entry?.right) ? entry.right : []
+  }));
+  items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json(items);
+}));
 
 app.get('/api/stream', (req, res) => {
   res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
@@ -158,12 +172,36 @@ app.delete('/api/players/:id', auth, wrap(async (req, res) => {
 // Add points to many players at once (from the scan confirmation)
 app.post('/api/players/bulk', auth, wrap(async (req, res) => {
   const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
+  const game = {
+    image: String(req.body.image || '').trim(),
+    banner: String(req.body.banner || '').trim().toUpperCase(),
+    left: Array.isArray(req.body.left) ? req.body.left : [],
+    right: Array.isArray(req.body.right) ? req.body.right : []
+  };
   if (!rows.length || rows.length > 20) {
     return res.status(400).json({ error: 'Walang rows o sobra sa 20 players ang scanned result.' });
   }
   if (rows.some(r => !r || !clean(r.ign) || num(r.points) === null)) {
     return res.status(400).json({ error: 'May IGN o points na kulang o invalid sa scanned result.' });
   }
+
+  const beforeSnap = await ref.once('value');
+  const beforeData = beforeSnap.val() || {};
+  const beforeRecords = toList(beforeData);
+  const historyPlayers = rows.map(row => {
+    const ign = clean(row.ign);
+    const match = matchIgn(ign, beforeRecords);
+    const oldPoints = match && match.length ? Number(beforeData[match[0].id]?.points) || 0 : 0;
+    const added = Number(num(row.points)) || 0;
+    return {
+      ign,
+      before: oldPoints,
+      added,
+      after: oldPoints + added,
+      label: game.banner || 'RESULT'
+    };
+  });
+
   const prepared = rows.map(r => ({ ign: clean(r.ign), points: num(r.points), id: ref.push().key }));
   let ambiguousIgn = '';
   const result = await ref.transaction(current => {
@@ -201,6 +239,25 @@ app.post('/api/players/bulk', auth, wrap(async (req, res) => {
     }
     return res.status(500).json({ error: 'Hindi na-save ang points sa database. Subukan ulit.' });
   }
+
+  const historyEntry = {
+    createdAt: new Date().toISOString(),
+    banner: game.banner || 'RESULT',
+    image: game.image || '',
+    left: game.left.map(item => ({
+      ign: clean(item?.ign || ''),
+      rating: Number(item?.rating) || 0,
+      medal: String(item?.medal || '')
+    })),
+    right: game.right.map(item => ({
+      ign: clean(item?.ign || ''),
+      rating: Number(item?.rating) || 0,
+      medal: String(item?.medal || '')
+    })),
+    players: historyPlayers,
+    action: 'scan_add_points'
+  };
+  await historyRef.push(historyEntry);
   res.json({ ok: true });
 }));
 

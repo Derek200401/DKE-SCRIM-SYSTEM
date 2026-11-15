@@ -52,6 +52,17 @@ input[type=file]::file-selector-button{background:var(--card);color:var(--tx);bo
 .role{font-size:13px;color:var(--gold);font-weight:700;text-align:center}
 .act{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 #pv{max-width:100%;border:1px solid var(--line);border-radius:12px;margin-bottom:12px}
+.history-list{display:grid;gap:12px;margin-top:12px}
+.history-card{display:grid;gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--in)}
+.history-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.history-preview{width:100%;max-height:260px;object-fit:contain;border-radius:10px;border:1px solid var(--line);background:#10151d}
+.history-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.team-box{padding:10px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,0.02)}
+.team-box h4{font-size:12px;color:var(--mut);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em}
+.audit{display:grid;gap:8px;margin-top:4px}
+.audit-row{display:grid;grid-template-columns:1.3fr auto auto;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,0.02)}
+.audit-row strong{font-weight:700}
+.audit-row .delta{color:var(--grn);font-weight:700}
 dialog{background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:16px;padding:20px;width:min(380px,92vw);margin:auto}
 dialog::backdrop{background:rgba(0,0,0,.7)}
 dialog form{display:grid;gap:10px}
@@ -72,6 +83,11 @@ dialog form{display:grid;gap:10px}
     <div class="head"><h2>Leaderboard</h2><span class="mut" id="count"></span></div>
     <input id="q" type="search" placeholder="Search IGN" autocomplete="off">
     <div id="list"></div>
+  </section>
+
+  <section class="card">
+    <div class="head"><h2>Game history</h2><span class="mut">Scan log</span></div>
+    <div id="historyList" class="history-list"></div>
   </section>
 
   <section id="panel" hidden>
@@ -127,9 +143,15 @@ dialog form{display:grid;gap:10px}
 
 <script>
 const $ = s => document.querySelector(s);
-let players = [], token = localStorage.getItem('dke_token') || '', q = '', editId = null, sc = null;
+let players = [], history = [], token = localStorage.getItem('dke_token') || '', q = '', editId = null, sc = null;
 let savingPoints = false;
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtDate = iso => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
 
 async function api(path, method = 'GET', body) {
   const r = await fetch(path, { method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: body ? JSON.stringify(body) : undefined });
@@ -151,6 +173,32 @@ function render() {
   $('#dl').innerHTML = s.map(p => `<option value="${esc(p.ign)}">`).join('');
   $('#count').textContent = players.length + ' players';
 }
+function renderHistory() {
+  if (!history.length) {
+    $('#historyList').innerHTML = '<div class="mut">Wala pang game history.</div>';
+    return;
+  }
+  $('#historyList').innerHTML = history.map(entry => {
+    const leftTeam = Array.isArray(entry.left) ? entry.left : [];
+    const rightTeam = Array.isArray(entry.right) ? entry.right : [];
+    const audit = Array.isArray(entry.players) ? entry.players : [];
+    return `<div class="history-card">
+      <div class="history-head">
+        <span class="tag ${entry.banner === 'DEFEAT' ? 'l' : 'w'}">${esc(entry.banner || 'RESULT')}</span>
+        <span class="mut">${fmtDate(entry.createdAt)}</span>
+      </div>
+      ${entry.image ? `<img class="history-preview" src="${entry.image}" alt="Scan result">` : ''}
+      <div class="history-meta">
+        <div class="team-box"><h4>Left team</h4>${leftTeam.map(p => `<div class="mut">${esc(p.ign || '-')} • ${Number(p.rating || 0)}</div>`).join('') || '<div class="mut">—</div>'}</div>
+        <div class="team-box"><h4>Right team</h4>${rightTeam.map(p => `<div class="mut">${esc(p.ign || '-')} • ${Number(p.rating || 0)}</div>`).join('') || '<div class="mut">—</div>'}</div>
+      </div>
+      <div class="audit">
+        <div class="mut" style="font-weight:700;">Points added</div>
+        ${audit.map(item => `<div class="audit-row"><strong>${esc(item.ign || '-')}</strong><span>${Number(item.before || 0)} → ${Number(item.after || 0)}</span><span class="delta">+${Number(item.added || 0)}</span></div>`).join('') || '<div class="mut">No point changes recorded.</div>'}
+      </div>
+    </div>`;
+  }).join('');
+}
 function setAdmin() {
   $('#panel').hidden = !token;
   $('#adminBtn').textContent = token ? 'Logout' : 'Admin';
@@ -160,9 +208,21 @@ function logout() { token = ''; localStorage.removeItem('dke_token'); setAdmin()
 
 /* ---------- live updates ---------- */
 function setPlayers(d) { if (JSON.stringify(d) !== JSON.stringify(players)) { players = d; render(); } }
+async function loadHistory() {
+  try {
+    const d = await fetch('/api/history').then(r => r.json());
+    history = Array.isArray(d) ? d : [];
+    renderHistory();
+  } catch (err) {
+    history = [];
+    renderHistory();
+  }
+}
 const es = new EventSource('/api/stream');
 es.onmessage = e => setPlayers(JSON.parse(e.data));
 setInterval(() => fetch('/api/players').then(r => r.json()).then(setPlayers).catch(() => {}), 5000);
+setInterval(loadHistory, 15000);
+loadHistory();
 
 /* ---------- login / edit / add ---------- */
 $('#adminBtn').onclick = () => token ? logout() : $('#lg').showModal();
@@ -252,7 +312,18 @@ $('#cfOk').onclick = async () => {
   savingPoints = true;
   $('#cfOk').disabled = true;
   $('#cfOk').textContent = 'Saving...';
-  try { await api('/api/players/bulk', 'POST', { rows }); $('#cf').hidden = true; sc = null; $('#scanSt').textContent = 'Na-add na ang points.'; }
+  try {
+    const left = (sc.t[0] || []).map(r => ({ ign: r.ign.trim(), rating: Number(r.rating || 0), medal: r.medal || '' }));
+    const right = (sc.t[1] || []).map(r => ({ ign: r.ign.trim(), rating: Number(r.rating || 0), medal: r.medal || '' }));
+    await api('/api/players/bulk', 'POST', {
+      rows,
+      image: sc.imageData || $('#pv').src,
+      banner: sc.banner || 'RESULT',
+      left,
+      right
+    });
+    $('#cf').hidden = true; sc = null; $('#scanSt').textContent = 'Na-add na ang points at nai-save na ang game history.'; await loadHistory();
+  }
   catch (err) { $('#cfErr').textContent = err.message; }
   finally {
     savingPoints = false;
@@ -285,8 +356,8 @@ $('#scanBtn').onclick = async () => {
     const t = [d.left, d.right].map(a => a.map(r => ({ ign: r.ign, rating: r.rating, medal: r.medal, pts: 0, role: '' })));
     const n = t[0].length + t[1].length;
     if (!n) throw new Error('Walang nabasa. Subukan ang mas malinaw na screenshot.');
-    sc = { t, lw: d.banner !== 'DEFEAT' };
-    $('#pv').src = im.url;
+    sc = { t, lw: d.banner !== 'DEFEAT', banner: String(d.banner || '').toUpperCase(), imageData: im.data };
+    $('#pv').src = im.data;
     st.textContent = n < 10 ? `${n} lang sa 10 player ang nabasa. I-check ang resulta.` : 'Tapos na. I-check ang resulta sa baba.';
     showConfirm();
     $('#cf').scrollIntoView({ behavior: 'smooth' });
