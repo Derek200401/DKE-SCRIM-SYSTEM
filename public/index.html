@@ -14,6 +14,8 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px so
 .brand{font-weight:800;font-size:15px;letter-spacing:.3px}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--grn);margin-right:8px}
 main{max-width:860px;margin:auto;padding:16px;display:grid;gap:16px}
+.view{display:grid;gap:16px}
+.nav-active{border-color:var(--ac)!important;color:#fff!important}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
 h2{font-size:14px;color:var(--mut);margin-bottom:12px;font-weight:600}
 input,select{width:100%;background:var(--in);color:var(--tx);border:1px solid var(--line);border-radius:10px;padding:11px 12px;font:inherit;font-size:16px}
@@ -53,78 +55,87 @@ input[type=file]::file-selector-button{background:var(--card);color:var(--tx);bo
 .role{font-size:13px;color:var(--gold);font-weight:700;text-align:center}
 .act{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 #pv{max-width:100%;border:1px solid var(--line);border-radius:12px;margin-bottom:12px}
-.history-list{display:grid;gap:12px;margin-top:12px}
-#history{scroll-margin-top:80px}
-.history-card{display:grid;gap:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--in)}
-.history-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.history-preview{width:100%;max-height:260px;object-fit:contain;border-radius:10px;border:1px solid var(--line);background:#10151d}
-.history-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.team-box{padding:10px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,0.02)}
-.team-box h4{font-size:12px;color:var(--mut);margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em}
-.audit{display:grid;gap:8px;margin-top:4px}
-.audit-row{display:grid;grid-template-columns:1.3fr auto auto;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,0.02)}
-.audit-row strong{font-weight:700}
-.audit-row .delta{color:var(--grn);font-weight:700}
+.history-list{display:grid;gap:10px;margin-top:12px}
+.history-item{width:100%;display:grid;grid-template-columns:96px 1fr auto;align-items:center;gap:12px;padding:10px;background:var(--in);color:var(--tx);border:1px solid var(--line);border-radius:12px;text-align:left;white-space:normal}
+.history-item:hover{border-color:var(--ac)}
+.history-thumb{width:96px;height:64px;display:grid;place-items:center;overflow:hidden;border-radius:8px;background:var(--card);color:var(--mut);font-size:12px}
+.history-thumb img{width:100%;height:100%;object-fit:cover}
+.history-item-info{display:grid;gap:4px}
+.history-item-info strong{font-size:14px}
+.history-detail{width:min(760px,94vw);max-height:90vh;overflow:auto}
+.history-detail-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.history-detail-head h2{margin:0}
+.history-detail-image{width:100%;max-height:48vh;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:var(--in)}
+.history-detail-teams{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.history-team{padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--in)}
+.history-team h3{font-size:13px;color:var(--mut);margin-bottom:8px}
+.history-player{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid var(--line)}
+.history-player:first-of-type{border-top:0}
 dialog{background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:16px;padding:20px;width:min(380px,92vw);margin:auto}
 dialog::backdrop{background:rgba(0,0,0,.7)}
 dialog form{display:grid;gap:10px}
 .err{color:var(--red);font-size:13px;min-height:18px}
-@media(max-width:560px){.frm{grid-template-columns:1fr}.tn{font-size:24px}}
+@media(max-width:560px){.frm{grid-template-columns:1fr}.tn{font-size:24px}.history-item{grid-template-columns:76px 1fr auto}.history-thumb{width:76px;height:56px}.history-detail-teams{grid-template-columns:1fr}.brand{font-size:13px}.bar-actions{gap:5px}.bar{padding:10px}}
 </style>
 </head>
 <body>
 <header><div class="bar">
   <div class="brand"><span class="dot"></span>DKE SCRIM POINTS SYSTEM</div>
   <div class="bar-actions">
+    <button id="dashboardBtn" class="ghost sm nav-active" type="button" aria-current="page">Dashboard</button>
     <button id="historyBtn" class="ghost sm" type="button">History</button>
     <button id="adminBtn" class="ghost sm">Admin</button>
   </div>
 </div></header>
 
 <main>
-  <section class="card top" id="top"></section>
+  <section id="dashboardView" class="view">
+    <section class="card top" id="top"></section>
 
-  <section class="card">
-    <div class="head"><h2>Leaderboard</h2><span class="mut" id="count"></span></div>
-    <input id="q" type="search" placeholder="Search IGN" autocomplete="off">
-    <div id="list"></div>
+    <section class="card">
+      <div class="head"><h2>Leaderboard</h2><span class="mut" id="count"></span></div>
+      <input id="q" type="search" placeholder="Search IGN" autocomplete="off">
+      <div id="list"></div>
+    </section>
+
+    <section id="panel" hidden>
+      <div class="card">
+        <h2>Add player</h2>
+        <div class="frm">
+          <input id="nIgn" placeholder="IGN" maxlength="40" autocomplete="off">
+          <input id="nPts" type="number" placeholder="Points" inputmode="numeric">
+          <button id="addBtn">Add player</button>
+        </div>
+        <div class="err" id="addErr"></div>
+      </div>
+
+      <div class="card">
+        <h2>Scan game result</h2>
+        <input id="file" type="file" accept="image/*">
+        <div class="act"><button id="scanBtn">Scan image</button></div>
+        <div class="mut" id="scanSt" style="margin-top:8px"></div>
+      </div>
+
+      <div class="card" id="cf" hidden>
+        <h2>Confirm scanned result</h2>
+        <img id="pv" alt="Game result">
+        <div class="mut" style="margin-bottom:12px">Check the IGN and rating. Edit anything that is incorrect; points will update automatically. A ⚠ means the AI-read medal does not match the rating, so verify it against the image.</div>
+        <div id="cfb"></div>
+        <div class="act">
+          <button id="cfOk">Confirm and add points</button>
+          <button id="flip" class="ghost">Flip victory / defeat</button>
+          <button id="cfNo" class="ghost">Cancel</button>
+        </div>
+        <div class="err" id="cfErr"></div>
+      </div>
+    </section>
   </section>
 
-  <section class="card" id="history">
-    <div class="head"><h2>Game history</h2><span class="mut" id="historyCount">Loading…</span></div>
-    <div id="historyList" class="history-list"></div>
-  </section>
-
-  <section id="panel" hidden>
-    <div class="card">
-      <h2>Add player</h2>
-      <div class="frm">
-        <input id="nIgn" placeholder="IGN" maxlength="40" autocomplete="off">
-        <input id="nPts" type="number" placeholder="Points" inputmode="numeric">
-        <button id="addBtn">Add player</button>
-      </div>
-      <div class="err" id="addErr"></div>
-    </div>
-
-    <div class="card">
-      <h2>Scan game result</h2>
-      <input id="file" type="file" accept="image/*">
-      <div class="act"><button id="scanBtn">Scan image</button></div>
-      <div class="mut" id="scanSt" style="margin-top:8px"></div>
-    </div>
-
-    <div class="card" id="cf" hidden>
-      <h2>Confirm scanned result</h2>
-      <img id="pv" alt="Game result">
-      <div class="mut" style="margin-bottom:12px">I-check ang IGN at rating. Kapag may mali, i-edit — awtomatikong mag-a-update ang points. Ang ⚠ ay nangangahulugang iba ang medal na nabasa ng AI sa icon kumpara sa rating, kaya i-check ang rating na iyon sa image.</div>
-      <div id="cfb"></div>
-      <div class="act">
-        <button id="cfOk">Confirm and add points</button>
-        <button id="flip" class="ghost">Flip victory / defeat</button>
-        <button id="cfNo" class="ghost">Cancel</button>
-      </div>
-      <div class="err" id="cfErr"></div>
-    </div>
+  <section id="historyView" class="view" hidden>
+    <section class="card">
+      <div class="head"><h2>Game history</h2><span class="mut" id="historyCount">Loading…</span></div>
+      <div id="historyList" class="history-list"></div>
+    </section>
   </section>
 </main>
 
@@ -146,6 +157,14 @@ dialog form{display:grid;gap:10px}
   <div class="act"><button>Save changes</button><button type="button" class="ghost" data-close>Cancel</button></div>
 </form></dialog>
 
+<dialog id="historyDetail" class="history-detail">
+  <div class="history-detail-head">
+    <h2 id="historyDetailTitle">Game details</h2>
+    <button type="button" class="ghost sm" data-close>Close</button>
+  </div>
+  <div id="historyDetailBody"></div>
+</dialog>
+
 <script>
 const $ = s => document.querySelector(s);
 let players = [], history = [], token = localStorage.getItem('dke_token') || '', q = '', editId = null, sc = null;
@@ -162,7 +181,7 @@ async function api(path, method = 'GET', body) {
   const r = await fetch(path, { method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: body ? JSON.stringify(body) : undefined });
   const d = await r.json().catch(() => ({}));
   if (r.status === 401 && token) logout();
-  if (!r.ok) throw new Error(d.error || 'May error. Subukan ulit.');
+  if (!r.ok) throw new Error(d.error || 'Something went wrong. Please try again.');
   return d;
 }
 
@@ -172,38 +191,76 @@ function render() {
   const t = s[0];
   $('#top').innerHTML = t
     ? `<div class="lbl">👑 Top player</div><div class="tn">${esc(t.ign)}</div><div class="tp">${t.points} <span>pts</span></div>`
-    : `<div class="lbl">Top player</div><div class="mut" style="margin-top:6px">Wala pang player.</div>`;
+    : `<div class="lbl">Top player</div><div class="mut" style="margin-top:6px">No players yet.</div>`;
   const f = s.map((p, i) => ({ ...p, rank: i + 1 })).filter(p => p.ign.toLowerCase().includes(q));
-  $('#list').innerHTML = f.length ? f.map(p => `<div class="row"><div class="rk">#${p.rank}</div><div class="nm">${esc(p.ign)}</div><div class="r2"><div class="pt">${p.points}</div>${token ? `<button class="ghost sm" data-e="${p.id}">Edit</button><button class="danger sm" data-d="${p.id}">Delete</button>` : ''}</div></div>`).join('') : `<div class="mut">${players.length?'Walang nahanap na player.':'Wala pang player. Hintayin ang admin na mag-add.'}</div>`;
+  $('#list').innerHTML = f.length ? f.map(p => `<div class="row"><div class="rk">#${p.rank}</div><div class="nm">${esc(p.ign)}</div><div class="r2"><div class="pt">${p.points}</div>${token ? `<button class="ghost sm" data-e="${p.id}">Edit</button><button class="danger sm" data-d="${p.id}">Delete</button>` : ''}</div></div>`).join('') : `<div class="mut">${players.length ? 'No players found.' : 'No players yet. Ask an admin to add players.'}</div>`;
   $('#dl').innerHTML = s.map(p => `<option value="${esc(p.ign)}">`).join('');
   $('#count').textContent = players.length + ' players';
 }
 function renderHistory() {
   $('#historyCount').textContent = history.length + (history.length === 1 ? ' game' : ' games');
   if (!history.length) {
-    $('#historyList').innerHTML = '<div class="mut">Wala pang game history.</div>';
+    $('#historyList').innerHTML = '<div class="mut">No game history yet.</div>';
     return;
   }
   $('#historyList').innerHTML = history.map(entry => {
-    const leftTeam = Array.isArray(entry.left) ? entry.left : [];
-    const rightTeam = Array.isArray(entry.right) ? entry.right : [];
-    const audit = Array.isArray(entry.players) ? entry.players : [];
-    return `<div class="history-card">
-      <div class="history-head">
-        <span class="tag ${entry.banner === 'DEFEAT' ? 'l' : 'w'}">${esc(entry.banner || 'RESULT')}</span>
+    const image = typeof entry.thumbnail === 'string' && /^data:image\/(?:jpeg|png|webp);base64,/i.test(entry.thumbnail)
+      ? `<span class="history-thumb"><img src="${esc(entry.thumbnail)}" alt=""></span>`
+      : '<span class="history-thumb">No image</span>';
+    return `<button class="history-item" type="button" data-history-id="${esc(entry.id)}">
+      ${image}
+      <span class="history-item-info">
+        <strong>${esc(entry.banner || 'Game result')}</strong>
         <span class="mut">${fmtDate(entry.createdAt)}</span>
-      </div>
-      ${entry.image ? `<img class="history-preview" src="${entry.image}" alt="Scan result">` : ''}
-      <div class="history-meta">
-        <div class="team-box"><h4>Left team</h4>${leftTeam.map(p => `<div class="mut">${esc(p.ign || '-')} • ${Number(p.rating || 0)}</div>`).join('') || '<div class="mut">—</div>'}</div>
-        <div class="team-box"><h4>Right team</h4>${rightTeam.map(p => `<div class="mut">${esc(p.ign || '-')} • ${Number(p.rating || 0)}</div>`).join('') || '<div class="mut">—</div>'}</div>
-      </div>
-      <div class="audit">
-        <div class="mut" style="font-weight:700;">Points added</div>
-        ${audit.map(item => `<div class="audit-row"><strong>${esc(item.ign || '-')}</strong><span>${Number(item.before || 0)} → ${Number(item.after || 0)}</span><span class="delta">+${Number(item.added || 0)}</span></div>`).join('') || '<div class="mut">No point changes recorded.</div>'}
-      </div>
-    </div>`;
+      </span>
+      <span aria-hidden="true">›</span>
+    </button>`;
   }).join('');
+}
+async function openHistoryDetails(id) {
+  const summary = history.find(item => item.id === id);
+  if (!summary) return;
+  $('#historyDetailTitle').textContent = `${summary.banner || 'Game result'} · ${fmtDate(summary.createdAt)}`;
+  $('#historyDetailBody').innerHTML = '<div class="mut">Loading game details…</div>';
+  $('#historyDetail').showModal();
+  try {
+    const response = await fetch('/api/history/' + encodeURIComponent(id));
+    const entry = await response.json();
+    if (!response.ok) throw new Error(entry.error || 'Could not load game details.');
+    const teams = [
+      { name: 'Left team', players: Array.isArray(entry.left) ? entry.left : [] },
+      { name: 'Right team', players: Array.isArray(entry.right) ? entry.right : [] }
+    ];
+    const image = typeof entry.image === 'string' && /^data:image\/(?:jpeg|png|webp);base64,/i.test(entry.image)
+      ? `<img class="history-detail-image" src="${esc(entry.image)}" alt="Scanned game scoreboard">`
+      : '<div class="mut">No scoreboard image saved.</div>';
+    $('#historyDetailTitle').textContent = `${entry.banner || 'Game result'} · ${fmtDate(entry.createdAt)}`;
+    $('#historyDetailBody').innerHTML = image + `<div class="history-detail-teams">${teams.map(team => `
+      <section class="history-team">
+        <h3>${team.name}</h3>
+        ${team.players.map(player => `<div class="history-player">
+          <span>${esc(player.ign || 'Unknown player')}</span>
+          <span>${Number(player.rating || 0)}${player.medal ? ` · ${esc(player.medal)}` : ''}</span>
+        </div>`).join('') || '<div class="mut">No player details.</div>'}
+      </section>`).join('')}</div>`;
+  } catch (error) {
+    $('#historyDetailBody').innerHTML = `<div class="mut">${esc(error.message || 'Could not load game details.')}</div>`;
+  }
+}
+function showView(view) {
+  const isHistory = view === 'history';
+  $('#dashboardView').hidden = isHistory;
+  $('#historyView').hidden = !isHistory;
+  $('#dashboardBtn').classList.toggle('nav-active', !isHistory);
+  $('#historyBtn').classList.toggle('nav-active', isHistory);
+  if (isHistory) {
+    $('#historyBtn').setAttribute('aria-current', 'page');
+    $('#dashboardBtn').removeAttribute('aria-current');
+  } else {
+    $('#dashboardBtn').setAttribute('aria-current', 'page');
+    $('#historyBtn').removeAttribute('aria-current');
+  }
+  if (isHistory) loadHistory();
 }
 function setAdmin() {
   $('#panel').hidden = !token;
@@ -217,28 +274,31 @@ function setPlayers(d) { if (JSON.stringify(d) !== JSON.stringify(players)) { pl
 async function loadHistory() {
   try {
     const response = await fetch('/api/history');
-    if (!response.ok) throw new Error('Hindi ma-load ang game history. Subukan ulit.');
+    if (!response.ok) throw new Error('Could not load game history. Please try again.');
     const d = await response.json();
-    if (!Array.isArray(d)) throw new Error('Invalid ang game history response.');
+    if (!Array.isArray(d)) throw new Error('Invalid game history response.');
     history = d;
     renderHistory();
   } catch (err) {
     $('#historyCount').textContent = 'Load failed';
-    $('#historyList').innerHTML = `<div class="mut">${esc(err.message || 'Hindi ma-load ang game history.')}</div>`;
+    $('#historyList').innerHTML = `<div class="mut">${esc(err.message || 'Could not load game history.')}</div>`;
   }
 }
 const es = new EventSource('/api/stream');
 es.onmessage = e => setPlayers(JSON.parse(e.data));
 setInterval(() => fetch('/api/players').then(r => r.json()).then(setPlayers).catch(() => {}), 5000);
-setInterval(loadHistory, 15000);
-loadHistory();
+setInterval(() => {
+  if (!$('#historyView').hidden) loadHistory();
+}, 15000);
 
 /* ---------- login / edit / add ---------- */
-$('#adminBtn').onclick = () => token ? logout() : $('#lg').showModal();
-$('#historyBtn').onclick = () => {
-  $('#history').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  loadHistory();
+$('#dashboardBtn').onclick = () => showView('dashboard');
+$('#historyBtn').onclick = () => showView('history');
+$('#historyList').onclick = e => {
+  const button = e.target.closest('[data-history-id]');
+  if (button) openHistoryDetails(button.dataset.historyId);
 };
+$('#adminBtn').onclick = () => token ? logout() : $('#lg').showModal();
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
 $('#lgf').onsubmit = async e => {
   e.preventDefault(); $('#lErr').textContent = '';
@@ -263,7 +323,7 @@ $('#list').onclick = async e => {
     editId = p.id; $('#eIgn').value = p.ign; $('#ePts').value = p.points; $('#eErr').textContent = ''; $('#ed').showModal();
   } else if (b.dataset.d) {
     const p = players.find(x => x.id === b.dataset.d);
-    if (confirm('I-delete si ' + p.ign + '?')) api('/api/players/' + p.id, 'DELETE').catch(err => alert(err.message));
+    if (confirm('Delete ' + p.ign + '?')) api('/api/players/' + p.id, 'DELETE').catch(err => alert(err.message));
   }
 };
 $('#edf').onsubmit = async e => {
@@ -272,7 +332,6 @@ $('#edf').onsubmit = async e => {
   catch (err) { $('#eErr').textContent = err.message; }
 };
 
-/* ---------- points system ---------- */
 function calc() {
   sc.t.forEach((rows, s) => {
     const win = (s === 0) === sc.lw; let m = -1;
@@ -300,7 +359,7 @@ function showConfirm() {
   $('#cfb').innerHTML = sc.t.map((rows, s) => {
     const win = (s === 0) === sc.lw;
     return `<div class="tm"><div class="th"><b>${s ? 'Right team' : 'Left team'}</b><span class="tag ${win ? 'w' : 'l'}">${win ? 'VICTORY' : 'DEFEAT'}</span></div>` +
-      rows.map((r, i) => `<div class="crow"><input class="ci" data-s="${s}" data-i="${i}" data-k="ign" list="dl" value="${esc(r.ign)}" placeholder="IGN"><input type="number" step="0.1" data-s="${s}" data-i="${i}" data-k="rating" value="${r.rating}" aria-label="Rating"><input type="number" data-s="${s}" data-i="${i}" data-k="pts" value="${r.pts}" aria-label="Points"><span class="role" title="${r.medal && r.medal !== r.role ? 'Iba ang medal na nabasa ng AI: ' + r.medal : ''}">${r.role}${r.medal && r.medal !== r.role ? ' ⚠' : ''}</span><button class="danger sm" data-x="${s}-${i}">✕</button></div>`).join('') + `</div>`;
+      rows.map((r, i) => `<div class="crow"><input class="ci" data-s="${s}" data-i="${i}" data-k="ign" list="dl" value="${esc(r.ign)}" placeholder="IGN"><input type="number" step="0.1" data-s="${s}" data-i="${i}" data-k="rating" value="${r.rating}" aria-label="Rating"><input type="number" data-s="${s}" data-i="${i}" data-k="pts" value="${r.pts}" aria-label="Points"><span class="role" title="${r.medal && r.medal !== r.role ? 'AI-read medal differs: ' + r.medal : ''}">${r.role}${r.medal && r.medal !== r.role ? ' ⚠' : ''}</span><button class="danger sm" data-x="${s}-${i}">✕</button></div>`).join('') + `</div>`;
   }).join('');
 }
 $('#cfb').onchange = e => {
@@ -321,7 +380,7 @@ $('#cfOk').onclick = async () => {
   if (savingPoints) return;
   $('#cfErr').textContent = '';
   const rows = sc.t.flat().filter(r => r.ign.trim()).map(r => ({ ign: r.ign.trim(), points: r.pts }));
-  if (!rows.length) { $('#cfErr').textContent = 'Walang IGN na maa-add.'; return; }
+  if (!rows.length) { $('#cfErr').textContent = 'There are no player names to add.'; return; }
   savingPoints = true;
   $('#cfOk').disabled = true;
   $('#cfOk').textContent = 'Saving...';
@@ -331,11 +390,12 @@ $('#cfOk').onclick = async () => {
     await api('/api/players/bulk', 'POST', {
       rows,
       image: sc.imageData || $('#pv').src,
+      thumbnail: sc.thumbnailData || '',
       banner: sc.banner || 'RESULT',
       left,
       right
     });
-    $('#cf').hidden = true; sc = null; $('#scanSt').textContent = 'Na-add na ang points at nai-save na ang game history.'; await loadHistory();
+    $('#cf').hidden = true; sc = null; $('#scanSt').textContent = 'Points added and game history saved.';
   }
   catch (err) { $('#cfErr').textContent = err.message; }
   finally {
@@ -353,28 +413,35 @@ function shrink(file) {
       const k = Math.min(1, 1800 / i.naturalWidth), c = document.createElement('canvas');
       c.width = Math.round(i.naturalWidth * k); c.height = Math.round(i.naturalHeight * k);
       c.getContext('2d').drawImage(i, 0, 0, c.width, c.height);
-      ok({ data: c.toDataURL('image/jpeg', 0.92), url });
+      const thumbScale = Math.min(1, 400 / c.width), thumb = document.createElement('canvas');
+      thumb.width = Math.round(c.width * thumbScale); thumb.height = Math.round(c.height * thumbScale);
+      thumb.getContext('2d').drawImage(c, 0, 0, thumb.width, thumb.height);
+      URL.revokeObjectURL(url);
+      ok({ data: c.toDataURL('image/jpeg', 0.9), thumbnail: thumb.toDataURL('image/jpeg', 0.65) });
     };
-    i.onerror = () => no(new Error('Hindi mabasa ang image.'));
+    i.onerror = () => {
+      URL.revokeObjectURL(url);
+      no(new Error('Could not read the image.'));
+    };
     i.src = url;
   });
 }
 $('#scanBtn').onclick = async () => {
   const f = $('#file').files[0], st = $('#scanSt');
-  if (!f) { st.textContent = 'Pumili muna ng image.'; return; }
-  $('#scanBtn').disabled = true; st.textContent = 'Nag-s-scan… hintayin ang resulta ng AI.';
+  if (!f) { st.textContent = 'Choose an image first.'; return; }
+  $('#scanBtn').disabled = true; st.textContent = 'Scanning… please wait for the AI result.';
   try {
     const im = await shrink(f);
     const d = await api('/api/scan', 'POST', { image: im.data });
     const t = [d.left, d.right].map(a => a.map(r => ({ ign: r.ign, rating: r.rating, medal: r.medal, pts: 0, role: '' })));
     const n = t[0].length + t[1].length;
-    if (!n) throw new Error('Walang nabasa. Subukan ang mas malinaw na screenshot.');
-    sc = { t, lw: d.banner !== 'DEFEAT', banner: String(d.banner || '').toUpperCase(), imageData: im.data };
+    if (!n) throw new Error('No players were detected. Try a clearer screenshot.');
+    sc = { t, lw: d.banner !== 'DEFEAT', banner: String(d.banner || '').toUpperCase(), imageData: im.data, thumbnailData: im.thumbnail };
     $('#pv').src = im.data;
-    st.textContent = n < 10 ? `${n} lang sa 10 player ang nabasa. I-check ang resulta.` : 'Tapos na. I-check ang resulta sa baba.';
+    st.textContent = n < 10 ? `Only ${n} of 10 players were detected. Review the result.` : 'Scan complete. Review the result below.';
     showConfirm();
     $('#cf').scrollIntoView({ behavior: 'smooth' });
-  } catch (err) { st.textContent = err.message || 'Hindi na-scan ang image.'; }
+  } catch (err) { st.textContent = err.message || 'Could not scan the image.'; }
   $('#scanBtn').disabled = false;
 };
 

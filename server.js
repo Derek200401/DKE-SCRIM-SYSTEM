@@ -14,7 +14,7 @@ const SECRET = process.env.SECRET || PASS + '-dke-secret';
 /* ---------- Firebase Realtime Database (permanent storage) ---------- */
 function loadCred() {
   let raw = (process.env.FIREBASE_SERVICE_ACCOUNT || '').trim();
-  if (!raw) throw new Error('Kulang ang FIREBASE_SERVICE_ACCOUNT sa Railway Variables.');
+  if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT is missing from the environment variables.');
   if (!raw.startsWith('{')) raw = Buffer.from(raw, 'base64').toString('utf8');
   return JSON.parse(raw);
 }
@@ -46,7 +46,7 @@ const safe = (a, b) => {
 function auth(req, res, next) {
   const [exp, sig] = (req.headers.authorization || '').replace('Bearer ', '').split('.');
   if (exp && sig && Date.now() < +exp && safe(sig, sign(exp))) return next();
-  res.status(401).json({ error: 'Session expired. Mag-login ulit.' });
+  res.status(401).json({ error: 'Your session expired. Please log in again.' });
 }
 const normalizeIgn = v => {
   let s = String(v || '').trim().replace(/\u00A0/g, ' ').replace(/\s+/g, ' ');
@@ -118,13 +118,18 @@ app.get('/api/history', wrap(async (req, res) => {
   const items = Object.entries(snap.val() || {}).map(([id, entry]) => ({
     id,
     createdAt: entry?.createdAt || new Date().toISOString(),
-    ...entry,
-    players: Array.isArray(entry?.players) ? entry.players : [],
-    left: Array.isArray(entry?.left) ? entry.left : [],
-    right: Array.isArray(entry?.right) ? entry.right : []
+    banner: entry?.banner || 'RESULT',
+    thumbnail: typeof entry?.thumbnail === 'string' && entry.thumbnail
+      ? entry.thumbnail
+      : typeof entry?.image === 'string' ? entry.image : ''
   }));
   items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   res.json(items);
+}));
+app.get('/api/history/:id', wrap(async (req, res) => {
+  const snap = await historyRef.child(req.params.id).once('value');
+  if (!snap.exists()) return res.status(404).json({ error: 'Game history entry not found.' });
+  res.json({ id: snap.key, ...snap.val() });
 }));
 
 app.get('/api/stream', (req, res) => {
@@ -142,13 +147,13 @@ app.post('/api/login', (req, res) => {
     const exp = String(Date.now() + 7 * 24 * 3600 * 1000);
     return res.json({ token: exp + '.' + sign(exp) });
   }
-  res.status(401).json({ error: 'Mali ang username o password.' });
+  res.status(401).json({ error: 'Incorrect username or password.' });
 });
 
 app.post('/api/players', auth, wrap(async (req, res) => {
   const ign = clean(req.body.ign), points = num(req.body.points);
-  if (!ign || points === null) return res.status(400).json({ error: 'Kailangan ng IGN at points.' });
-  if (find(ign)) return res.status(409).json({ error: 'Existing na ang IGN na ito.' });
+  if (!ign || points === null) return res.status(400).json({ error: 'IGN and points are required.' });
+  if (find(ign)) return res.status(409).json({ error: 'This IGN already exists.' });
   await ref.push({ ign, points });
   res.json({ ok: true });
 }));
@@ -156,10 +161,10 @@ app.post('/api/players', auth, wrap(async (req, res) => {
 app.put('/api/players/:id', auth, wrap(async (req, res) => {
   const p = players.find(x => x.id === req.params.id);
   const ign = clean(req.body.ign), points = num(req.body.points);
-  if (!p) return res.status(404).json({ error: 'Hindi mahanap ang player.' });
-  if (!ign || points === null) return res.status(400).json({ error: 'Kailangan ng IGN at points.' });
+  if (!p) return res.status(404).json({ error: 'Player not found.' });
+  if (!ign || points === null) return res.status(400).json({ error: 'IGN and points are required.' });
   const dup = find(ign);
-  if (dup && dup.id !== p.id) return res.status(409).json({ error: 'Existing na ang IGN na ito.' });
+  if (dup && dup.id !== p.id) return res.status(409).json({ error: 'This IGN already exists.' });
   await ref.child(p.id).update({ ign, points });
   res.json({ ok: true });
 }));
@@ -174,15 +179,16 @@ app.post('/api/players/bulk', auth, wrap(async (req, res) => {
   const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
   const game = {
     image: String(req.body.image || '').trim(),
+    thumbnail: String(req.body.thumbnail || '').trim(),
     banner: String(req.body.banner || '').trim().toUpperCase(),
     left: Array.isArray(req.body.left) ? req.body.left : [],
     right: Array.isArray(req.body.right) ? req.body.right : []
   };
   if (!rows.length || rows.length > 20) {
-    return res.status(400).json({ error: 'Walang rows o sobra sa 20 players ang scanned result.' });
+    return res.status(400).json({ error: 'The scanned result must contain between 1 and 20 players.' });
   }
   if (rows.some(r => !r || !clean(r.ign) || num(r.points) === null)) {
-    return res.status(400).json({ error: 'May IGN o points na kulang o invalid sa scanned result.' });
+    return res.status(400).json({ error: 'A scanned player has a missing or invalid IGN or points value.' });
   }
 
   const beforeSnap = await ref.once('value');
@@ -235,15 +241,16 @@ app.post('/api/players/bulk', auth, wrap(async (req, res) => {
   });
   if (!result.committed) {
     if (ambiguousIgn) {
-      return res.status(409).json({ error: `Hindi naidagdag ang points: may dalawang magkapantay na posibleng IGN para sa "${ambiguousIgn}". I-check ang leaderboard at itama muna ang IGN.` });
+      return res.status(409).json({ error: `Points were not added because "${ambiguousIgn}" matches multiple players equally. Check the leaderboard and correct the IGN.` });
     }
-    return res.status(500).json({ error: 'Hindi na-save ang points sa database. Subukan ulit.' });
+    return res.status(500).json({ error: 'Could not save points to the database. Please try again.' });
   }
 
   const historyEntry = {
     createdAt: new Date().toISOString(),
     banner: game.banner || 'RESULT',
     image: game.image || '',
+    thumbnail: game.thumbnail || '',
     left: game.left.map(item => ({
       ign: clean(item?.ign || ''),
       rating: Number(item?.rating) || 0,
@@ -298,24 +305,47 @@ const PROMPT = `Analyze this Mobile Legends end-game scoreboard carefully.
    - The exact rating: the decimal number printed at the bottom of the medal / MVP icon near the centre divider. Do NOT confuse it with kills/deaths/assists, gold or level numbers.
    - The medal icon beside the rating. Rules: Winning team: Victory MVP = highest score of the winning team; Supreme Gold 10.1-15.0; Gold 7.1-10.0; Silver 4.1-7.0; Bronze 3.0-4.0. Losing team: Defeat MVP (MVP Loss) = highest score of the losing team (minimum 6.6, sometimes none); Gold 7.1 and up; Silver 4.1-7.0; Bronze 3.0-4.0.`;
 
-const MODELS = [process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-flash-lite-latest'].filter((x, i, a) => x && a.indexOf(x) === i);
+const DEFAULT_MODELS = [
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite'
+];
+const MODELS = [...new Set([
+  ...(process.env.GEMINI_MODELS || '').split(','),
+  ...DEFAULT_MODELS
+].map(model => String(model || '').trim()).filter(Boolean))];
+const canTryAnotherModel = error => {
+  const message = String(error.message || error);
+  const status = Number(error.status || error.code);
+  return [404, 408, 429, 500, 502, 503, 504].includes(status) ||
+    (status === 403 && /model|tier|access|permission/i.test(message)) ||
+    /404|NOT_FOUND|no longer available|model .*not found|429|quota|RESOURCE_EXHAUSTED|rate.?limit|503|UNAVAILABLE|overloaded|high demand|timed? ?out|502|504/i.test(message);
+};
 async function generate(ai, m) {
-  let last;
+  const errors = [];
   for (const model of MODELS) {
     try {
-      return await ai.models.generateContent({
+      const response = await ai.models.generateContent({
         model,
         contents: [{ inlineData: { data: m[2], mimeType: m[1] } }, PROMPT],
-        config: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0 }
+        config: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0, maxOutputTokens: 1024 }
       });
+      let data;
+      try { data = JSON.parse(response.text); }
+      catch {
+        errors.push(new Error(`Model ${model} returned invalid JSON.`));
+        continue;
+      }
+      if (validateScan(data)) return data;
+      errors.push(new Error(`Model ${model} returned an incomplete scoreboard.`));
     } catch (e) {
-      last = e;
-      const msg = String(e.message || e);
-      if (/503|UNAVAILABLE|high demand|overloaded|404|NOT_FOUND|no longer available|not found/i.test(msg)) continue;
-      throw e;
+      if (!canTryAnotherModel(e)) throw e;
+      errors.push(e);
     }
   }
-  throw last;
+  throw errors.find(error => /429|quota|RESOURCE_EXHAUSTED|rate.?limit/i.test(String(error.message || error))) ||
+    errors.find(error => /503|UNAVAILABLE|overloaded|high demand|timed? ?out|502|504/i.test(String(error.message || error))) ||
+    errors[errors.length - 1] ||
+    new Error('No Gemini models are configured.');
 }
 
 function validateScan(d) {
@@ -331,21 +361,12 @@ function validateScan(d) {
 }
 
 app.post('/api/scan', auth, wrap(async (req, res) => {
-  if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'Wala pang GEMINI_API_KEY sa Railway Variables.' });
+  if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'GEMINI_API_KEY is missing from the environment variables.' });
   const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(req.body.image || '');
-  if (!m) return res.status(400).json({ error: 'Invalid na image.' });
+  if (!m) return res.status(400).json({ error: 'Invalid image.' });
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    let d;
-    for (let i = 0; i < 2; i++) {
-      const response = await generate(ai, m);
-      try { d = JSON.parse(response.text); }
-      catch { d = null; }
-      if (validateScan(d)) break;
-    }
-    if (!validateScan(d)) {
-      return res.status(502).json({ error: 'Hindi kumpleto o hindi malinaw ang scan (kailangan 5 players bawat team). Subukan ulit gamit ang malinaw at buong scoreboard image.' });
-    }
+    const d = await generate(ai, m);
     const medal = x => { const t = String(x || '').toLowerCase(); return t.includes('mvp') ? 'MVP' : t.includes('supreme') ? 'Supreme Gold' : t.includes('gold') ? 'Gold' : t.includes('silver') ? 'Silver' : t.includes('bronze') ? 'Bronze' : ''; };
     const fix = side => (d.players || []).filter(p => String(p.side).toLowerCase() === side).slice(0, 5)
       .map(p => ({ ign: clean(p.ign), rating: Math.min(15, Math.max(0, Math.round(parseFloat(p.rating) * 10) / 10 || 0)), medal: medal(p.medal) }));
@@ -354,7 +375,16 @@ app.post('/api/scan', auth, wrap(async (req, res) => {
     const msg = String(e.message || e);
     const busy = /429|quota|RESOURCE_EXHAUSTED/i.test(msg);
     const down = /503|UNAVAILABLE|high demand|overloaded/i.test(msg);
-    res.status(502).json({ error: down ? 'Busy ang Gemini ngayon (pansamantala lang). Subukan ulit sa loob ng ilang segundo.' : busy ? 'Naubos muna ang free limit ng Gemini. Maghintay ng ilang minuto at subukan ulit.' : 'Hindi na-scan: ' + msg.slice(0, 200) });
+    const invalid = /incomplete scoreboard|invalid JSON/i.test(msg);
+    res.status(502).json({
+      error: down
+        ? 'Gemini is temporarily unavailable. Please try again in a few seconds.'
+        : busy
+          ? 'The free-tier quota is currently exhausted for the available models. Please wait and try again.'
+          : invalid
+            ? 'The scan was incomplete or unclear. Use a clear, full scoreboard image showing all five players on each team.'
+            : 'Could not scan the image: ' + msg.slice(0, 200)
+    });
   }
 }));
 
