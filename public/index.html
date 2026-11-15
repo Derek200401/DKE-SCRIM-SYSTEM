@@ -258,14 +258,14 @@ async function openHistoryDetails(id) {
           }).join('')}</div>
         </section>`
       : '<section class="history-points"><h3>Points added</h3><div class="mut">No point changes recorded.</div></section>';
-    $('#historyDetailBody').innerHTML = image + `<div class="history-detail-teams">${teams.map(team => `
+    $('#historyDetailBody').innerHTML = image + pointsHtml + `<div class="history-detail-teams">${teams.map(team => `
       <section class="history-team">
         <h3>${team.name}</h3>
         ${team.players.map(player => `<div class="history-player">
           <span>${esc(player.ign || 'Unknown player')}</span>
           <span>${Number(player.rating || 0)}${player.medal ? ` · ${esc(player.medal)}` : ''}</span>
         </div>`).join('') || '<div class="mut">No player details.</div>'}
-      </section>`).join('')}</div>` + pointsHtml;
+      </section>`).join('')}</div>`;
   } catch (error) {
     $('#historyDetailBody').innerHTML = `<div class="mut">${esc(error.message || 'Could not load game details.')}</div>`;
   }

@@ -28,6 +28,14 @@ const historyRef = admin.database().ref('history');
 let players = [];
 const clients = new Set();
 const toList = v => Object.entries(v || {}).map(([id, p]) => ({ id, ign: String(p.ign || ''), points: Number(p.points) || 0 }));
+const toArray = value => {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object') return [];
+  return Object.keys(value)
+    .filter(key => /^\d+$/.test(key))
+    .sort((a, b) => Number(a) - Number(b))
+    .map(key => value[key]);
+};
 
 await new Promise(ok => {
   ref.on('value', snap => {
@@ -129,7 +137,14 @@ app.get('/api/history', wrap(async (req, res) => {
 app.get('/api/history/:id', wrap(async (req, res) => {
   const snap = await historyRef.child(req.params.id).once('value');
   if (!snap.exists()) return res.status(404).json({ error: 'Game history entry not found.' });
-  res.json({ id: snap.key, ...snap.val() });
+  const entry = snap.val();
+  res.json({
+    id: snap.key,
+    ...entry,
+    players: toArray(entry.players),
+    left: toArray(entry.left),
+    right: toArray(entry.right)
+  });
 }));
 
 app.get('/api/stream', (req, res) => {
